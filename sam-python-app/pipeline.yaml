@@ -1,0 +1,148 @@
+# pipeline.yaml
+# A minimal AWS CodePipeline CloudFormation template
+# to integrate with an existing CodeBuild project and deploy a SAM application.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Minimal CodePipeline for SAM Python app with existing CodeBuild project.
+
+Parameters:
+  # --- GitHub Source Parameters ---
+  # These are now used indirectly via the CodeStar Connection for the Source action.
+  GitHubOwner:
+    Type: String
+    Description: Your GitHub username or organization name (e.g., mvpjava)
+    Default: mvpjava # Replace with your GitHub owner
+
+  GitHubRepo:
+    Type: String
+    Description: Your GitHub repository name (e.g., sam-pipeline-demo)
+    Default: sam-pipeline-demo # Replace with your GitHub repository name
+
+  GitHubBranch:
+    Type: String
+    Description: The branch in your GitHub repository to monitor for changes
+    Default: main # Or your main development branch
+
+  # --- CodeStar Connection ARN for GitHub ---
+  # This is REQUIRED for CodePipeline to connect to GitHub securely.
+  # Create this in AWS Console: Developer Tools -> Settings -> Connections -> Create connection (GitHub)
+  CodeStarConnectionArn:
+    Type: String
+    Description: ARN of the AWS CodeStar Connection to your GitHub account.
+    Default: arn:aws:codestar-connections:eu-west-2:403177882230:connection/b26d9cf7-ac72-421d-8b7e-0552d8e58bdc
+
+  # --- AWS CodePipeline Service Role ---
+  # This role grants CodePipeline permissions to orchestrate the pipeline,
+  # including starting CodeBuild projects and deploying CloudFormation stacks.
+  CodePipelineServiceRoleArn:
+    Type: String
+    Description: ARN of the IAM role for AWS CodePipeline.
+    # Replace with your actual CodePipeline service role ARN
+    Default: arn:aws:iam::403177882230:role/service-role/AWSCodePipelineServiceRole-eu-west-2-skillsu-demo
+
+  # --- AWS CloudFormation Execution Role ---
+  # This role grants CloudFormation permissions to deploy your SAM application resources.
+  CloudFormationExecutionRoleArn:
+    Type: String
+    Description: ARN of the IAM role for CloudFormation to deploy SAM stack.
+    # Replace with your actual CloudFormation execution role ARN
+    Default: arn:aws:iam::403177882230:role/myCloudFormation-Role
+
+  # --- S3 Artifact Bucket ---
+  # This S3 bucket will be used by CodePipeline to store artifacts (e.g., source code, build output).
+  ArtifactBucketName:
+    Type: String
+    Description: Name of the S3 bucket for CodePipeline artifacts.
+    Default: sam-pipleline-skillu-demo # Ensure this bucket exists and CodePipeline role has access
+
+  # --- Existing CodeBuild Project Name ---
+  ExistingCodeBuildProjectName:
+    Type: String
+    Description: The name of your existing CodeBuild project to use.
+    Default: my-sam-python-pipeline-build # Your existing CodeBuild project name
+
+  # --- SAM Application Deployment Parameters ---
+  SamTemplateFilePath:
+    Type: String
+    Description: Path to your SAM application's template file relative to the repo root.
+    # This parameter is for sam build/package commands in buildspec, not for artifact path.
+    Default: sam-python-app/template.yaml # The path within your repo
+
+  SamStackNameDev:
+    Type: String
+    Description: CloudFormation stack name for the Dev deployment stage.
+    Default: my-python-sam-app-dev # Stack name for your dev environment
+
+Resources:
+  # Define the AWS CodePipeline
+  MyPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub "${AWS::StackName}-Pipeline" # Dynamically name the pipeline
+      RoleArn: !Ref CodePipelineServiceRoleArn # Role for CodePipeline to orchestrate
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucketName # S3 bucket for pipeline artifacts
+      Stages:
+        # 1. Source Stage: Pulls code from GitHub using CodeStar Connection
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS # CodeStar Connections is an AWS service
+                Provider: CodeStarSourceConnection # Use this provider for CodeStar Connections
+                Version: '1'
+              OutputArtifacts:
+                - Name: SourceOutput # Artifact name for subsequent stages
+              Configuration:
+                ConnectionArn: !Ref CodeStarConnectionArn # Reference the connection ARN
+                FullRepositoryId: !Sub "${GitHubOwner}/${GitHubRepo}" # Owner/Repo format
+                BranchName: !Ref GitHubBranch
+                # No 'PollForSourceChanges' is needed when using Connection, as webhooks are used.
+              RunOrder: 1
+        
+        # 2. Build Stage: Executes your existing CodeBuild project
+        - Name: Build
+          Actions:
+            - Name: BuildAndPackage
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              InputArtifacts:
+                - Name: SourceOutput # Input from the Source stage
+              OutputArtifacts:
+                - Name: BuildOutput # Output artifact containing packaged SAM app (packaged.yaml)
+              Configuration:
+                ProjectName: !Ref ExistingCodeBuildProjectName # REFERENCE TO YOUR EXISTING PROJECT
+              RunOrder: 1
+              RoleArn: !Ref CodePipelineServiceRoleArn # CodePipeline needs to assume its role to start CodeBuild
+        
+        # 3. Deploy Stage (Dev): Deploys the SAM application using CloudFormation
+        - Name: DeployDev
+          Actions:
+            - Name: DeploySamApp
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              InputArtifacts:
+                - Name: BuildOutput # Input from the Build stage (packaged.yaml)
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                # CloudFormation stack name for the Dev environment
+                StackName: !Ref SamStackNameDev
+                # Point directly to packaged.yaml at the root of the BuildOutput artifact
+                TemplatePath: "BuildOutput::packaged.yaml"
+                # Set capabilities required for your SAM application (e.g., IAM permissions)
+                Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+                RoleArn: !Ref CloudFormationExecutionRoleArn # Role for CloudFormation to deploy resources
+              RunOrder: 1
+
+Outputs:
+  PipelineUrl:
+    Description: URL of the created CodePipeline
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${MyPipeline}/view?region=${AWS::Region}"
