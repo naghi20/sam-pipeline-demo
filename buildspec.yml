@@ -10,7 +10,7 @@ phases:
       - sam build --template sam-python-app/template.yaml
       # --no-resolve-s3 will use our S3 bucket specified via --s3-bucket instead of using a SAM generated S3 bucket name in order to store packaged artifacts
       # like lambda code etc ..
-      - sam package --s3-bucket sam-pipleline-skillu-demo --output-template-file packaged.yaml --template-file sam-python-app/template.yaml --no-resolve-s3
+      - sam package --s3-bucket naghitest100 --output-template-file packaged.yaml --template-file sam-python-app/template.yaml --no-resolve-s3
 artifacts:
   files:
     - packaged.yaml
