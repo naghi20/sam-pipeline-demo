@@ -13,7 +13,7 @@ GITHUB_REPO_URL="https://github.com/mvpjava/sam-pipeline-demo.git"
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # Replace with your values
-CODEBUILD_SERVICE_ROLE_ARN="arn:aws:iam::403177882230:role/service-role/mycodebuildservicerole"
+CODEBUILD_SERVICE_ROLE_ARN="arn:aws:iam::225989367454:role/service-role/piperule"
 AWS_REGION="eu-west-2" 
 
 
